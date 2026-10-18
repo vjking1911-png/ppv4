@@ -319,16 +319,46 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
   },
 ];
 
-export function getStoredData() {
+function getKeys(userEmail?: string) {
+  if (!userEmail) return STORAGE_KEYS;
+  const suffix = userEmail.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
+  return {
+    PROFILE: `paisaplan_profile_${suffix}`,
+    CATEGORIES: `paisaplan_categories_${suffix}`,
+    TRANSACTIONS: `paisaplan_transactions_${suffix}`,
+    SAVINGS_GOALS: `paisaplan_savings_goals_${suffix}`,
+    BILLS: `paisaplan_recurring_bills_${suffix}`,
+  };
+}
+
+export function getActiveUserEmail(): string | null {
+  return localStorage.getItem('paisaplan_active_email');
+}
+
+export function setActiveUserEmail(email: string | null) {
+  if (email) {
+    localStorage.setItem('paisaplan_active_email', email);
+  } else {
+    localStorage.removeItem('paisaplan_active_email');
+  }
+}
+
+export function getStoredData(userEmail?: string) {
   try {
-    const profile = localStorage.getItem(STORAGE_KEYS.PROFILE);
-    const categories = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
-    const transactions = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
-    const savingsGoals = localStorage.getItem(STORAGE_KEYS.SAVINGS_GOALS);
-    const bills = localStorage.getItem(STORAGE_KEYS.BILLS);
+    const keys = getKeys(userEmail);
+    const profile = localStorage.getItem(keys.PROFILE);
+    const categories = localStorage.getItem(keys.CATEGORIES);
+    const transactions = localStorage.getItem(keys.TRANSACTIONS);
+    const savingsGoals = localStorage.getItem(keys.SAVINGS_GOALS);
+    const bills = localStorage.getItem(keys.BILLS);
+
+    // If this is a specific user with no saved data yet, personalize initial profile with their email
+    const fallbackProfile = userEmail 
+      ? { ...INITIAL_PROFILE, email: userEmail, name: userEmail.split('@')[0] } 
+      : INITIAL_PROFILE;
 
     return {
-      profile: profile ? JSON.parse(profile) : INITIAL_PROFILE,
+      profile: profile ? JSON.parse(profile) : fallbackProfile,
       categories: categories ? JSON.parse(categories) : INITIAL_CATEGORIES,
       transactions: transactions ? JSON.parse(transactions) : INITIAL_TRANSACTIONS,
       savingsGoals: savingsGoals ? JSON.parse(savingsGoals) : INITIAL_SAVINGS_GOALS,
@@ -346,30 +376,40 @@ export function getStoredData() {
   }
 }
 
-export function saveProfile(profile: UserFinancialProfile) {
-  localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+export function saveProfile(profile: UserFinancialProfile, userEmail?: string) {
+  const keys = getKeys(userEmail || profile.email);
+  localStorage.setItem(keys.PROFILE, JSON.stringify(profile));
 }
 
-export function saveTransactions(transactions: Transaction[]) {
-  localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+export function saveTransactions(transactions: Transaction[], userEmail?: string) {
+  const keys = getKeys(userEmail);
+  localStorage.setItem(keys.TRANSACTIONS, JSON.stringify(transactions));
 }
 
-export function saveCategories(categories: BudgetCategory[]) {
-  localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
+export function saveCategories(categories: BudgetCategory[], userEmail?: string) {
+  const keys = getKeys(userEmail);
+  localStorage.setItem(keys.CATEGORIES, JSON.stringify(categories));
 }
 
-export function saveSavingsGoals(goals: SavingsGoal[]) {
-  localStorage.setItem(STORAGE_KEYS.SAVINGS_GOALS, JSON.stringify(goals));
+export function saveSavingsGoals(goals: SavingsGoal[], userEmail?: string) {
+  const keys = getKeys(userEmail);
+  localStorage.setItem(keys.SAVINGS_GOALS, JSON.stringify(goals));
 }
 
-export function saveBills(bills: RecurringBill[]) {
-  localStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(bills));
+export function saveBills(bills: RecurringBill[], userEmail?: string) {
+  const keys = getKeys(userEmail);
+  localStorage.setItem(keys.BILLS, JSON.stringify(bills));
 }
 
-export function resetDemoData() {
-  localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(INITIAL_PROFILE));
-  localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(INITIAL_CATEGORIES));
-  localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(INITIAL_TRANSACTIONS));
-  localStorage.setItem(STORAGE_KEYS.SAVINGS_GOALS, JSON.stringify(INITIAL_SAVINGS_GOALS));
-  localStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(INITIAL_BILLS));
+export function resetDemoData(userEmail?: string) {
+  const keys = getKeys(userEmail);
+  const fallbackProfile = userEmail 
+    ? { ...INITIAL_PROFILE, email: userEmail, name: userEmail.split('@')[0] } 
+    : INITIAL_PROFILE;
+
+  localStorage.setItem(keys.PROFILE, JSON.stringify(fallbackProfile));
+  localStorage.setItem(keys.CATEGORIES, JSON.stringify(INITIAL_CATEGORIES));
+  localStorage.setItem(keys.TRANSACTIONS, JSON.stringify(INITIAL_TRANSACTIONS));
+  localStorage.setItem(keys.SAVINGS_GOALS, JSON.stringify(INITIAL_SAVINGS_GOALS));
+  localStorage.setItem(keys.BILLS, JSON.stringify(INITIAL_BILLS));
 }

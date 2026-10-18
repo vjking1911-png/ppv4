@@ -1,6 +1,6 @@
 import React from 'react';
 import { PaisaPlanLogo } from './PaisaPlanLogo';
-import { AuthStatus } from './AuthStatus';
+import { AuthStatus, SyncedUser } from './AuthStatus';
 import { User } from 'firebase/auth';
 import { UserFinancialProfile } from '../types/finance';
 import { getWarikooTierByIncome } from '../utils/warikooLaws';
@@ -14,10 +14,11 @@ interface TopBarProps {
   onOpenAddModal: () => void;
   onOpenAIInsights: () => void;
   onOpenMarketIntel: () => void;
-  user: User | null;
+  user: User | SyncedUser | null;
   profile?: UserFinancialProfile;
   isSyncing: boolean;
-  onLoginSuccess?: (user: User) => void;
+  onLoginSuccess?: (user: User | SyncedUser) => void;
+  onSignOut?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -30,6 +31,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   profile,
   isSyncing,
   onLoginSuccess,
+  onSignOut,
 }) => {
   const currentTier = profile ? getWarikooTierByIncome(profile.monthlyIncome) : null;
 
@@ -170,6 +172,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             user={user}
             isSyncing={isSyncing}
             onLoginSuccess={onLoginSuccess}
+            onSignOut={onSignOut}
           />
 
           {/* Add Entry CTA */}

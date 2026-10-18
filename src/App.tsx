@@ -6,7 +6,9 @@ import {
   saveTransactions, 
   saveSavingsGoals, 
   saveBills, 
-  resetDemoData 
+  resetDemoData,
+  getActiveUserEmail,
+  setActiveUserEmail
 } from './utils/storage';
 import { 
   UserFinancialProfile, 
@@ -32,25 +34,42 @@ import { LiveMarketIntelModal } from './components/LiveMarketIntelModal';
 import { ExportDataModal } from './components/ExportDataModal';
 import { ImportCSVModal } from './components/ImportCSVModal';
 import { PaisaPlanLogo } from './components/PaisaPlanLogo';
+import { SyncedUser } from './components/AuthStatus';
 import { auth } from './firebase/config';
 import { firestoreService } from './firebase/firestoreService';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { RotateCcw, ShieldCheck, Globe, CloudCheck } from 'lucide-react';
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState<User | SyncedUser | null>(() => {
+    const activeEmail = getActiveUserEmail();
+    if (activeEmail) {
+      return {
+        uid: `usr_${activeEmail.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+        email: activeEmail,
+        displayName: activeEmail.split('@')[0],
+        photoURL: null,
+      };
+    }
+    return null;
+  });
+
   const [data, setData] = useState<{
     profile: UserFinancialProfile;
     categories: BudgetCategory[];
     transactions: Transaction[];
     savingsGoals: SavingsGoal[];
     bills: RecurringBill[];
-  }>(() => getStoredData());
+  }>(() => {
+    const activeEmail = getActiveUserEmail();
+    return getStoredData(activeEmail || undefined);
+  });
 
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(() => {
-    const stored = getStoredData();
+    const activeEmail = getActiveUserEmail();
+    const stored = getStoredData(activeEmail || undefined);
     return !stored.profile.hasCompletedOnboarding;
   });
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -62,95 +81,161 @@ export default function App() {
 
   const { profile, categories, transactions, savingsGoals, bills } = data;
   const isInitialLoginSync = useRef(false);
+  const unsubscribersRef = useRef<Array<() => void>>([]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 2800);
   };
 
-  // Firebase Auth State Listener & Firestore Real-Time Subscriptions
+  const cleanupListeners = () => {
+    unsubscribersRef.current.forEach((unsub) => {
+      try {
+        unsub();
+      } catch (err) {
+        console.warn('Listener cleanup error:', err);
+      }
+    });
+    unsubscribersRef.current = [];
+  };
+
+  const setupUserSync = (uid: string, email: string, displayName?: string) => {
+    cleanupListeners();
+    setIsSyncing(true);
+
+    try {
+      const unsubProfile = firestoreService.subscribeUserProfile(uid, (remoteProfile) => {
+        if (remoteProfile) {
+          setData((prev) => ({ ...prev, profile: remoteProfile }));
+          saveProfile(remoteProfile, email);
+          if (!remoteProfile.hasCompletedOnboarding) {
+            setIsOnboardingOpen(true);
+          }
+        } else if (!isInitialLoginSync.current) {
+          isInitialLoginSync.current = true;
+          const currentStored = getStoredData(email);
+          firestoreService.seedUserInitialData(
+            uid,
+            {
+              ...currentStored.profile,
+              name: displayName || currentStored.profile.name,
+              email: email || currentStored.profile.email,
+            },
+            currentStored.categories,
+            currentStored.transactions,
+            currentStored.savingsGoals,
+            currentStored.bills
+          ).then(() => {
+            showToast('Initialized cloud database records');
+            setIsOnboardingOpen(true);
+          }).catch((err) => {
+            console.warn('Initial seed error:', err);
+          });
+        }
+      });
+      unsubscribersRef.current.push(unsubProfile);
+
+      const unsubTx = firestoreService.subscribeTransactions(uid, (remoteTxs) => {
+        if (remoteTxs && remoteTxs.length > 0) {
+          setData((prev) => ({ ...prev, transactions: remoteTxs }));
+          saveTransactions(remoteTxs, email);
+        }
+      });
+      unsubscribersRef.current.push(unsubTx);
+
+      const unsubCats = firestoreService.subscribeCategories(uid, (remoteCats) => {
+        if (remoteCats && remoteCats.length > 0) {
+          setData((prev) => ({ ...prev, categories: remoteCats }));
+          saveCategories(remoteCats, email);
+        }
+      });
+      unsubscribersRef.current.push(unsubCats);
+
+      const unsubGoals = firestoreService.subscribeSavingsGoals(uid, (remoteGoals) => {
+        if (remoteGoals) {
+          setData((prev) => ({ ...prev, savingsGoals: remoteGoals }));
+          saveSavingsGoals(remoteGoals, email);
+        }
+      });
+      unsubscribersRef.current.push(unsubGoals);
+
+      const unsubBills = firestoreService.subscribeBills(uid, (remoteBills) => {
+        if (remoteBills) {
+          setData((prev) => ({ ...prev, bills: remoteBills }));
+          saveBills(remoteBills, email);
+        }
+        setIsSyncing(false);
+      });
+      unsubscribersRef.current.push(unsubBills);
+    } catch (e) {
+      console.warn('Firestore subscription notice:', e);
+      setIsSyncing(false);
+    }
+  };
+
+  // Firebase Auth State Listener
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
-
       if (user) {
-        setIsSyncing(true);
-        showToast(`Connected to Firebase as ${user.displayName || user.email}`);
-
-        // Set up real-time Firestore listeners for this authenticated user
-        const unsubProfile = firestoreService.subscribeUserProfile(user.uid, (remoteProfile) => {
-          if (remoteProfile) {
-            setData((prev) => ({ ...prev, profile: remoteProfile }));
-            saveProfile(remoteProfile);
-            if (!remoteProfile.hasCompletedOnboarding) {
-              setIsOnboardingOpen(true);
-            }
-          } else if (!isInitialLoginSync.current) {
-            // New user in Firestore: seed their initial dataset
-            isInitialLoginSync.current = true;
-            firestoreService.seedUserInitialData(
-              user.uid,
-              {
-                ...data.profile,
-                name: user.displayName || data.profile.name,
-                email: user.email || data.profile.email,
-              },
-              data.categories,
-              data.transactions,
-              data.savingsGoals,
-              data.bills
-            ).then(() => {
-              showToast('Initialized cloud database records');
-              setIsOnboardingOpen(true);
-            });
-          }
-        });
-
-        const unsubTx = firestoreService.subscribeTransactions(user.uid, (remoteTxs) => {
-          setData((prev) => ({ ...prev, transactions: remoteTxs }));
-          saveTransactions(remoteTxs);
-        });
-
-        const unsubCats = firestoreService.subscribeCategories(user.uid, (remoteCats) => {
-          if (remoteCats.length > 0) {
-            setData((prev) => ({ ...prev, categories: remoteCats }));
-            saveCategories(remoteCats);
-          }
-        });
-
-        const unsubGoals = firestoreService.subscribeSavingsGoals(user.uid, (remoteGoals) => {
-          setData((prev) => ({ ...prev, savingsGoals: remoteGoals }));
-          saveSavingsGoals(remoteGoals);
-        });
-
-        const unsubBills = firestoreService.subscribeBills(user.uid, (remoteBills) => {
-          setData((prev) => ({ ...prev, bills: remoteBills }));
-          saveBills(remoteBills);
-          setIsSyncing(false);
-        });
-
-        return () => {
-          unsubProfile();
-          unsubTx();
-          unsubCats();
-          unsubGoals();
-          unsubBills();
-        };
+        setCurrentUser(user);
+        if (user.email) {
+          setActiveUserEmail(user.email);
+        }
+        showToast(`Connected as ${user.displayName || user.email}`);
+        setupUserSync(user.uid, user.email || 'user@example.com', user.displayName || undefined);
       } else {
-        isInitialLoginSync.current = false;
-        setIsSyncing(false);
+        // If not logged in natively via Firebase, check if there's an active synced user
+        const activeEmail = getActiveUserEmail();
+        if (activeEmail && !currentUser) {
+          const syncedUser: SyncedUser = {
+            uid: `usr_${activeEmail.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+            email: activeEmail,
+            displayName: activeEmail.split('@')[0],
+            photoURL: null,
+          };
+          setCurrentUser(syncedUser);
+          setupUserSync(syncedUser.uid, syncedUser.email, syncedUser.displayName);
+        }
       }
     });
 
-    return () => unsubscribeAuth();
+    return () => {
+      unsubscribeAuth();
+      cleanupListeners();
+    };
   }, []);
+
+  const handleLoginSuccess = async (user: User | SyncedUser) => {
+    setCurrentUser(user);
+    if (user.email) {
+      setActiveUserEmail(user.email);
+    }
+    const userStoredData = getStoredData(user.email || undefined);
+    setData(userStoredData);
+    if (!userStoredData.profile.hasCompletedOnboarding) {
+      setIsOnboardingOpen(true);
+    }
+    showToast(`Signed in as ${user.displayName || user.email}`);
+    if (user.uid && user.email) {
+      setupUserSync(user.uid, user.email, user.displayName || undefined);
+    }
+  };
+
+  const handleSignOut = () => {
+    cleanupListeners();
+    setCurrentUser(null);
+    setActiveUserEmail(null);
+    const defaultData = getStoredData();
+    setData(defaultData);
+    showToast('Signed out. Local default data loaded.');
+  };
 
   // Safe-to-Spend real-time calculation
   const safeToSpendMetrics: SafeToSpendResult = useMemo(() => {
     return calculateSafeToSpend(profile, transactions, bills, savingsGoals, categories);
   }, [profile, transactions, bills, savingsGoals, categories]);
 
-  // Transaction Actions (with Firestore write)
+  // Transaction Actions (with storage & Firestore sync)
   const handleAddTransaction = async (newTx: Omit<Transaction, 'id'>) => {
     const transaction: Transaction = {
       ...newTx,
@@ -158,10 +243,14 @@ export default function App() {
     };
     const updated = [transaction, ...transactions];
     setData((prev) => ({ ...prev, transactions: updated }));
-    saveTransactions(updated);
+    saveTransactions(updated, currentUser?.email || undefined);
 
     if (currentUser) {
-      await firestoreService.addTransaction(currentUser.uid, transaction);
+      try {
+        await firestoreService.addTransaction(currentUser.uid, transaction);
+      } catch (err) {
+        console.warn('Cloud sync transaction error:', err);
+      }
     }
 
     showToast(
@@ -172,10 +261,14 @@ export default function App() {
   const handleDeleteTransaction = async (id: string) => {
     const updated = transactions.filter((t: Transaction) => t.id !== id);
     setData((prev) => ({ ...prev, transactions: updated }));
-    saveTransactions(updated);
+    saveTransactions(updated, currentUser?.email || undefined);
 
     if (currentUser) {
-      await firestoreService.deleteTransaction(currentUser.uid, id);
+      try {
+        await firestoreService.deleteTransaction(currentUser.uid, id);
+      } catch (err) {
+        console.warn('Cloud delete transaction error:', err);
+      }
     }
 
     showToast('Transaction removed');
@@ -189,11 +282,15 @@ export default function App() {
 
     const updated = [...createdTransactions, ...transactions];
     setData((prev) => ({ ...prev, transactions: updated }));
-    saveTransactions(updated);
+    saveTransactions(updated, currentUser?.email || undefined);
 
     if (currentUser) {
       for (const t of createdTransactions) {
-        await firestoreService.addTransaction(currentUser.uid, t);
+        try {
+          await firestoreService.addTransaction(currentUser.uid, t);
+        } catch (err) {
+          console.warn('Cloud sync imported tx error:', err);
+        }
       }
     }
 
@@ -205,10 +302,14 @@ export default function App() {
   // Profile & Category Actions
   const handleUpdateProfile = async (updatedProfile: UserFinancialProfile) => {
     setData((prev) => ({ ...prev, profile: updatedProfile }));
-    saveProfile(updatedProfile);
+    saveProfile(updatedProfile, currentUser?.email || undefined);
 
     if (currentUser) {
-      await firestoreService.saveUserProfile(currentUser.uid, updatedProfile);
+      try {
+        await firestoreService.saveUserProfile(currentUser.uid, updatedProfile);
+      } catch (err) {
+        console.warn('Cloud sync profile error:', err);
+      }
     }
 
     showToast('Profile & Safe-to-Spend parameters updated');
@@ -216,10 +317,14 @@ export default function App() {
 
   const handleUpdateCategories = async (updatedCategories: BudgetCategory[]) => {
     setData((prev) => ({ ...prev, categories: updatedCategories }));
-    saveCategories(updatedCategories);
+    saveCategories(updatedCategories, currentUser?.email || undefined);
 
     if (currentUser) {
-      await firestoreService.saveCategories(currentUser.uid, updatedCategories);
+      try {
+        await firestoreService.saveCategories(currentUser.uid, updatedCategories);
+      } catch (err) {
+        console.warn('Cloud sync categories error:', err);
+      }
     }
 
     showToast('Budget category limits updated');
@@ -234,12 +339,16 @@ export default function App() {
       profile: updatedProfile,
       categories: updatedCategories,
     }));
-    saveProfile(updatedProfile);
-    saveCategories(updatedCategories);
+    saveProfile(updatedProfile, currentUser?.email || undefined);
+    saveCategories(updatedCategories, currentUser?.email || undefined);
 
     if (currentUser) {
-      await firestoreService.saveUserProfile(currentUser.uid, updatedProfile);
-      await firestoreService.saveCategories(currentUser.uid, updatedCategories);
+      try {
+        await firestoreService.saveUserProfile(currentUser.uid, updatedProfile);
+        await firestoreService.saveCategories(currentUser.uid, updatedCategories);
+      } catch (err) {
+        console.warn('Cloud sync onboarding error:', err);
+      }
     }
 
     showToast(`Welcome ${updatedProfile.name}! Ideal budget calibrated for ${updatedProfile.profession}`);
@@ -253,10 +362,14 @@ export default function App() {
     };
     const updated = [...savingsGoals, goal];
     setData((prev) => ({ ...prev, savingsGoals: updated }));
-    saveSavingsGoals(updated);
+    saveSavingsGoals(updated, currentUser?.email || undefined);
 
     if (currentUser) {
-      await firestoreService.saveSavingsGoal(currentUser.uid, goal);
+      try {
+        await firestoreService.saveSavingsGoal(currentUser.uid, goal);
+      } catch (err) {
+        console.warn('Cloud sync goal error:', err);
+      }
     }
 
     showToast(`Savings vault "${newGoal.title}" created`);
@@ -270,11 +383,15 @@ export default function App() {
       return g;
     });
     setData((prev) => ({ ...prev, savingsGoals: updated }));
-    saveSavingsGoals(updated);
+    saveSavingsGoals(updated, currentUser?.email || undefined);
 
     const targetGoal = updated.find((g: SavingsGoal) => g.id === goalId);
     if (targetGoal && currentUser) {
-      await firestoreService.saveSavingsGoal(currentUser.uid, targetGoal);
+      try {
+        await firestoreService.saveSavingsGoal(currentUser.uid, targetGoal);
+      } catch (err) {
+        console.warn('Cloud update goal error:', err);
+      }
     }
 
     // Auto-record as an expense / transfer transaction to reflect in ledger
@@ -296,10 +413,14 @@ export default function App() {
   const handleDeleteGoal = async (goalId: string) => {
     const updated = savingsGoals.filter((g: SavingsGoal) => g.id !== goalId);
     setData((prev) => ({ ...prev, savingsGoals: updated }));
-    saveSavingsGoals(updated);
+    saveSavingsGoals(updated, currentUser?.email || undefined);
 
     if (currentUser) {
-      await firestoreService.deleteSavingsGoal(currentUser.uid, goalId);
+      try {
+        await firestoreService.deleteSavingsGoal(currentUser.uid, goalId);
+      } catch (err) {
+        console.warn('Cloud delete goal error:', err);
+      }
     }
 
     showToast('Savings goal deleted');
@@ -326,10 +447,14 @@ export default function App() {
     });
 
     setData((prev) => ({ ...prev, bills: updated }));
-    saveBills(updated);
+    saveBills(updated, currentUser?.email || undefined);
 
     if (targetBill && currentUser) {
-      await firestoreService.saveBill(currentUser.uid, targetBill);
+      try {
+        await firestoreService.saveBill(currentUser.uid, targetBill);
+      } catch (err) {
+        console.warn('Cloud save bill error:', err);
+      }
     }
 
     // If marked as paid, auto-log as a transaction
@@ -355,10 +480,14 @@ export default function App() {
     };
     const updated = [...bills, bill];
     setData((prev) => ({ ...prev, bills: updated }));
-    saveBills(updated);
+    saveBills(updated, currentUser?.email || undefined);
 
     if (currentUser) {
-      await firestoreService.saveBill(currentUser.uid, bill);
+      try {
+        await firestoreService.saveBill(currentUser.uid, bill);
+      } catch (err) {
+        console.warn('Cloud save bill error:', err);
+      }
     }
 
     showToast(`Recurring obligation "${newBill.title}" added`);
@@ -367,10 +496,14 @@ export default function App() {
   const handleDeleteBill = async (billId: string) => {
     const updated = bills.filter((b: RecurringBill) => b.id !== billId);
     setData((prev) => ({ ...prev, bills: updated }));
-    saveBills(updated);
+    saveBills(updated, currentUser?.email || undefined);
 
     if (currentUser) {
-      await firestoreService.deleteBill(currentUser.uid, billId);
+      try {
+        await firestoreService.deleteBill(currentUser.uid, billId);
+      } catch (err) {
+        console.warn('Cloud delete bill error:', err);
+      }
     }
 
     showToast('Recurring obligation removed');
@@ -378,8 +511,8 @@ export default function App() {
 
   // Demo reset
   const handleResetData = () => {
-    resetDemoData();
-    setData(getStoredData());
+    resetDemoData(currentUser?.email || undefined);
+    setData(getStoredData(currentUser?.email || undefined));
     showToast('Reset to default demo data');
   };
 
@@ -395,6 +528,8 @@ export default function App() {
         user={currentUser}
         profile={profile}
         isSyncing={isSyncing}
+        onLoginSuccess={handleLoginSuccess}
+        onSignOut={handleSignOut}
       />
 
       {/* Main View Area */}

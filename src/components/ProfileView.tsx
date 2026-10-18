@@ -12,6 +12,7 @@ import {
   calibrateCategoriesToWarikooLaw 
 } from '../utils/warikooLaws';
 import { formatINR } from '../utils/formatters';
+import { SyncedUser } from './AuthStatus';
 import { User } from 'firebase/auth';
 import { 
   User as UserIcon, 
@@ -29,13 +30,14 @@ import {
   RotateCcw,
   ExternalLink,
   Award,
-  Zap
+  Zap,
+  Mail
 } from 'lucide-react';
 
 interface ProfileViewProps {
   profile: UserFinancialProfile;
   categories: BudgetCategory[];
-  currentUser: User | null;
+  currentUser: User | SyncedUser | null;
   onUpdateProfile: (updated: UserFinancialProfile) => void;
   onUpdateCategories: (updated: BudgetCategory[]) => void;
   onOpenOnboarding: () => void;

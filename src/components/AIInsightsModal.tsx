@@ -28,6 +28,7 @@ import {
 import { getWarikooTierByIncome } from '../utils/warikooLaws';
 import { formatINR } from '../utils/formatters';
 import { User as FirebaseUser } from 'firebase/auth';
+import { SyncedUser } from './AuthStatus';
 
 interface AIInsightsModalProps {
   isOpen: boolean;
@@ -38,7 +39,7 @@ interface AIInsightsModalProps {
   categories: BudgetCategory[];
   goals: SavingsGoal[];
   bills: RecurringBill[];
-  currentUser: FirebaseUser | null;
+  currentUser: FirebaseUser | SyncedUser | null;
 }
 
 export const AIInsightsModal: React.FC<AIInsightsModalProps> = ({
