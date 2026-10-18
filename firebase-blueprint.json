@@ -1,0 +1,259 @@
+{
+  "entities": {
+    "userProfile": {
+      "title": "UserProfile",
+      "description": "User profile containing personal financial settings and safe-to-spend preferences",
+      "type": "object",
+      "properties": {
+        "monthlyIncome": {
+          "type": "number",
+          "description": "Monthly inflow or salary amount in INR"
+        },
+        "payday": {
+          "type": "number",
+          "description": "Day of the month the user receives salary (1-31)"
+        },
+        "currencySymbol": {
+          "type": "string",
+          "description": "Currency symbol, defaults to INR ₹"
+        },
+        "monthlySavingsTarget": {
+          "type": "number",
+          "description": "Target amount to save/invest each month"
+        },
+        "dailyBufferPercent": {
+          "type": "number",
+          "description": "Contingency buffer percentage (e.g. 5-15%)"
+        },
+        "profession": {
+          "type": "string",
+          "description": "User profession or occupation"
+        },
+        "hasCompletedOnboarding": {
+          "type": "boolean",
+          "description": "Whether user finished the first-login onboarding modal"
+        },
+        "selectedTier": {
+          "type": "string",
+          "enum": ["tier1_survival", "tier2_foundation", "tier3_growth", "tier4_wealth"],
+          "description": "Selected Warikoo Law income tier"
+        },
+        "budgetSplitMode": {
+          "type": "string",
+          "enum": ["preset", "custom"],
+          "description": "Whether budget allocation is following the Warikoo preset or custom slider ratios"
+        },
+        "customSplit": {
+          "type": "object",
+          "description": "Custom ratio split percentages for Day-Zero Shield, Needs, and Wants",
+          "properties": {
+            "shieldPercent": { "type": "number" },
+            "needsPercent": { "type": "number" },
+            "wantsPercent": { "type": "number" }
+          }
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update"
+        }
+      },
+      "required": ["monthlyIncome", "monthlySavingsTarget"]
+    },
+    "transaction": {
+      "title": "Transaction",
+      "description": "A financial income or expense ledger entry",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Merchant or title of transaction",
+          "maxLength": 128
+        },
+        "amount": {
+          "type": "number",
+          "description": "Transaction amount in INR"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["expense", "income"],
+          "description": "Whether money is an inflow or outflow"
+        },
+        "categoryId": {
+          "type": "string",
+          "description": "ID of the associated budget category"
+        },
+        "date": {
+          "type": "string",
+          "description": "Transaction date in YYYY-MM-DD format"
+        },
+        "paymentMethod": {
+          "type": "string",
+          "enum": ["upi", "credit_card", "debit_card", "net_banking", "cash"],
+          "description": "Payment instrument used"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional user notes",
+          "maxLength": 500
+        },
+        "isRecurring": {
+          "type": "boolean",
+          "description": "Whether this transaction is recurring"
+        },
+        "userId": {
+          "type": "string",
+          "description": "UID of the owning user"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of creation"
+        }
+      },
+      "required": ["title", "amount", "type", "categoryId", "date", "paymentMethod", "userId"]
+    },
+    "budgetCategory": {
+      "title": "BudgetCategory",
+      "description": "Customizable monthly category limits for spending",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Category name",
+          "maxLength": 64
+        },
+        "group": {
+          "type": "string",
+          "enum": ["needs", "wants", "savings"],
+          "description": "50/30/20 group assignment"
+        },
+        "monthlyLimit": {
+          "type": "number",
+          "description": "Monthly spending cap in INR"
+        },
+        "color": {
+          "type": "string",
+          "description": "Hex color code for UI"
+        },
+        "icon": {
+          "type": "string",
+          "description": "Icon identifier"
+        },
+        "userId": {
+          "type": "string",
+          "description": "UID of the owning user"
+        }
+      },
+      "required": ["name", "group", "monthlyLimit", "userId"]
+    },
+    "savingsGoal": {
+      "title": "SavingsGoal",
+      "description": "Target financial goal or vault",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Goal name",
+          "maxLength": 100
+        },
+        "targetAmount": {
+          "type": "number",
+          "description": "Total target amount in INR"
+        },
+        "currentAmount": {
+          "type": "number",
+          "description": "Current accumulated savings in INR"
+        },
+        "targetDate": {
+          "type": "string",
+          "description": "Target completion date in YYYY-MM-DD"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["emergency", "vehicle", "gold", "travel", "tech", "other"],
+          "description": "Goal archetype"
+        },
+        "color": {
+          "type": "string",
+          "description": "Hex color code"
+        },
+        "monthlyTarget": {
+          "type": "number",
+          "description": "Planned monthly contribution"
+        },
+        "userId": {
+          "type": "string",
+          "description": "UID of the owning user"
+        }
+      },
+      "required": ["title", "targetAmount", "currentAmount", "userId"]
+    },
+    "recurringBill": {
+      "title": "RecurringBill",
+      "description": "Scheduled monthly bills and commitments",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Bill name",
+          "maxLength": 100
+        },
+        "amount": {
+          "type": "number",
+          "description": "Monthly bill amount in INR"
+        },
+        "dueDay": {
+          "type": "number",
+          "description": "Day of the month the bill is due (1-31)"
+        },
+        "categoryId": {
+          "type": "string",
+          "description": "Category ID"
+        },
+        "isAutoDebit": {
+          "type": "boolean",
+          "description": "Whether bill auto-deducts"
+        },
+        "isPaidThisMonth": {
+          "type": "boolean",
+          "description": "Payment status for current calendar cycle"
+        },
+        "provider": {
+          "type": "string",
+          "description": "Service provider or payee",
+          "maxLength": 100
+        },
+        "userId": {
+          "type": "string",
+          "description": "UID of the owning user"
+        }
+      },
+      "required": ["title", "amount", "dueDay", "categoryId", "userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/userProfile" },
+      "description": "User profile with financial parameters and safe-to-spend settings"
+    },
+    "/users/{userId}/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/transaction" },
+      "description": "User financial transactions ledger"
+    },
+    "/users/{userId}/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/budgetCategory" },
+      "description": "User custom budget categories and monthly caps"
+    },
+    "/users/{userId}/savingsGoals/{goalId}": {
+      "schema": { "$ref": "#/entities/savingsGoal" },
+      "description": "User savings milestone vaults"
+    },
+    "/users/{userId}/bills/{billId}": {
+      "schema": { "$ref": "#/entities/recurringBill" },
+      "description": "User recurring bills and scheduled commitments"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "PaisaPlan",
+  "description": "Smart personal budget planner and expense tracker with safe-to-spend calculations, savings goals, and spending alerts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
